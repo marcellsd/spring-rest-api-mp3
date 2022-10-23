@@ -1,4 +1,5 @@
 package com.marcell.springrestapi.service.impl;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -12,10 +13,12 @@ import com.marcell.springrestapi.enums.StatusPedido;
 import com.marcell.springrestapi.exception.PedidoNaoEncontradoException;
 import com.marcell.springrestapi.exception.RegraNegocioException;
 import com.marcell.springrestapi.model.Cliente;
+import com.marcell.springrestapi.model.Estoque;
 import com.marcell.springrestapi.model.ItemPedido;
 import com.marcell.springrestapi.model.Pedido;
 import com.marcell.springrestapi.model.Produto;
 import com.marcell.springrestapi.repository.ClienteRepository;
+import com.marcell.springrestapi.repository.EstoqueRepository;
 import com.marcell.springrestapi.repository.ItemPedidoRepository;
 import com.marcell.springrestapi.repository.PedidoRepository;
 import com.marcell.springrestapi.repository.ProdutoRepository;
@@ -33,6 +36,7 @@ public class PedidoServiceImpl implements PedidoService {
     private final ClienteRepository clientesRepository;
     private final ProdutoRepository produtosRepository;
     private final ItemPedidoRepository itemsPedidoRepository;
+    private final EstoqueRepository estoqueRepository;
 
     @Override
     @Transactional
@@ -43,12 +47,17 @@ public class PedidoServiceImpl implements PedidoService {
                 .orElseThrow(() -> new RegraNegocioException("Código de cliente inválido."));
 
         Pedido pedido = new Pedido();
-        pedido.setTotal(dto.getTotal());
+        //pedido.setTotal(dto.getTotal());
         pedido.setDataPedido(LocalDate.now());
         pedido.setCliente(cliente);
         pedido.setStatus(StatusPedido.REALIZADO);
 
         List<ItemPedido> itemsPedido = converterItems(pedido, dto.getItems());
+        float total = 0;
+        for (ItemPedido itemPedido : itemsPedido) {
+            total = total + itemPedido.getQuantidade().floatValue() * itemPedido.getProduto().getPreco().floatValue();
+        }
+        pedido.setTotal(new BigDecimal(total));
         repository.save(pedido);
         itemsPedidoRepository.saveAll(itemsPedido);
         pedido.setItens(itemsPedido);
@@ -69,12 +78,15 @@ public class PedidoServiceImpl implements PedidoService {
                                     () -> new RegraNegocioException(
                                             "Código de produto inválido: "+ idProduto
                                     ));
-
-                    ItemPedido itemPedido = new ItemPedido();
-                    itemPedido.setQuantidade(dto.getQuantidade());
-                    itemPedido.setPedido(pedido);
-                    itemPedido.setProduto(produto);
-                    return itemPedido;
+                    if (checarAtualizarEstoque(produto, dto.getQuantidade())){
+                        ItemPedido itemPedido = new ItemPedido();
+                        itemPedido.setQuantidade(dto.getQuantidade());
+                        itemPedido.setPedido(pedido);
+                        itemPedido.setProduto(produto);
+                        return itemPedido;
+                    }
+                    else return null;
+                    
                 }).collect(Collectors.toList());
 
     }
@@ -111,5 +123,22 @@ public class PedidoServiceImpl implements PedidoService {
 
     }
 
-    
+    public boolean checarAtualizarEstoque(Produto produto, Integer quantidade){
+        boolean check = false;
+        Estoque estoque = estoqueRepository.findByProduto(produto);
+        if (estoque == null){
+            throw(new RegraNegocioException("Estoque do produto"+ produto.getDescricao() +"não encontrado."));
+        }
+        else{
+            if (estoque.getQuantidade()<quantidade) {
+                throw(new RegraNegocioException("Estoque do produto"+ produto.getDescricao() +"não possui uma quantidade suficiente."));   
+            }
+            else{
+                estoque.setQuantidade(estoque.getQuantidade() - quantidade);
+                check = true;
+            }
+        }
+        return check;
+    }
+
 }

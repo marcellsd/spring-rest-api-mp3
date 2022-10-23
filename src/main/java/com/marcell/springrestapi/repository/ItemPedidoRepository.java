@@ -12,4 +12,5 @@ import com.marcell.springrestapi.model.ItemPedido;
 public interface ItemPedidoRepository extends JpaRepository<ItemPedido,Integer>{
     
     List<ItemPedido> findByPedidoId(Integer id);
+
 }
